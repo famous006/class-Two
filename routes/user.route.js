@@ -1,5 +1,5 @@
 const express = require('express')
-const { getSignup, getDashboard, getRegister, postSignup, postSignin } = require('../controllers/user.controller')
+const { getSignup, getDashboard, postRegister, postSignin, getLogin } = require('../controllers/user.controller')
 const router = express.Router()
 
 
@@ -7,10 +7,12 @@ router.get('/signup', getSignup)
 
 router.get("/dashboard", getDashboard)
 
-router.post('/register', getRegister)
+router.post('/register', postRegister)
 
-router.get('/signup', postSignup)
+// router.get('/signup', postSignup)
 
-router.get('/signin', postSignin)
+router.get('/login', getLogin)
+
+router.post('/signin', postSignin)
 
 module.exports = router
