@@ -89,42 +89,40 @@ exports.getLogin = (req, res) => {
 exports.postSignin = (req, res) => {
     const { email, password } = req.body;
 
-    console.log('Login from submitted data:', req.body);
-    
-    customerModel.findOne({email: email })
-    .then((foundCustomers) => {
-        if (!foundCustomers) {
-            console.log('Invalid email');
-            return res.status(400).json({message: 'Invalid email or password'})
-            // res.redirect('/user/dashboard')
-        }
+    console.log("Login form submitted data:", req.body);
 
-        const isMatch = bcrypt.compareSync(password, foundCustomers.password);
+    customerModel.findOne({ email })
+        .then((foundCustomer) => {
+            if (!foundCustomer) {
+                console.log("Invalid email");
+                return res.status(400).json({ message: "Invalid email or password" });
+            }
 
-        if (!isMatch) {
-            console.log('Invalid email');
-            return res.status(400).json({message: 'Invalid email or password'})
-        }
-        else {
-            console.log('Login successful for:', foundCustomers.email);
-            const token = jwt.sign({email: req.body.email}, 'secretkey', {expiresIn: '1h'})
-            console.log('Generated JWT', token);
-            
+            // Compare provided password with hashed one
+            const isMatch = bcrypt.compareSync(password, foundCustomer.password);
+
+            if (!isMatch) {
+                console.log("Invalid password");
+                return res.status(400).json({ message: "Invalid email or password" });
+            }
+
+            // ✅ Success
+            console.log("Login successful for:", foundCustomer.email);
+            const token = jwt.sign({ email: req.body.email }, "secretkey", { expiresIn: "1h" });
+            console.log("Generated JWT:", token);
             return res.json({
-                message: 'Login successful',
+                message: "Login successful",
                 user: {
-                    id: foundCustomers._id,
-                    firstName: foundCustomers.firstName,
-                    email: foundCustomers.email,
+                    id: foundCustomer._id,
+                    firstName: foundCustomer.firstName,
+                    email: foundCustomer.email,
                     token: token
                 }
-            })
-        }
-    }
-    )
-    .catch((err) => {
-        console.log('Error during signin', err);
-        res.status(500).send('Internal server error')
-        
-    })
-}
+            });
+        })
+
+        .catch((err) => {
+            console.error("Error logging in:", err);
+            res.status(500).json({ message: "Internal server error" });
+        });
+};
