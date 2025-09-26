@@ -86,45 +86,49 @@ exports.getLogin = (req, res) => {
     res.render('signin')
 }
 
-exports.postSignin = (req, res) => {
-    const { email, password } = req.body;
+exports.postSignin = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        console.log("🟢 Incoming login:", { email, password }); // log what you get
 
-    console.log('Login from submitted data:', req.body);
-    
-    customerModel.findOne({email: email })
-    .then((foundCustomers) => {
-        if (!foundCustomers) {
-            console.log('Invalid email');
-            return res.status(400).json({message: 'Invalid email or password'})
-            // res.redirect('/user/dashboard')
+        if (!email || !password) {
+            return res.status(400).json({ message: "Email and password required" });
         }
 
-        const isMatch = bcrypt.compareSync(password, foundCustomers.password);
+        const user = await customerModel.findOne({ email });
+        if (!user) {
+            console.log("❌ No user found for email:", email);
+            return res.status(400).json({ message: "Invalid email or password" });
+        }
 
+        const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            console.log('Invalid email');
-            return res.status(400).json({message: 'Invalid email or password'})
+            console.log("❌ Password mismatch for:", email);
+            return res.status(400).json({ message: "Invalid email or password" });
         }
-        else {
-            console.log('Login successful for:', foundCustomers.email);
-            const token = jwt.sign({email: req.body.email}, 'secretkey', {expiresIn: '1h'})
-            console.log('Generated JWT', token);
-            
-            return res.json({
-                message: 'Login successful',
-                user: {
-                    id: foundCustomers._id,
-                    firstName: foundCustomers.firstName,
-                    email: foundCustomers.email,
-                    token: token
-                }
-            })
-        }
+
+        // log secret to confirm it's loaded
+        console.log("JWT Secret being used:", process.env.JWT_SECRET);
+
+        const token = jwt.sign(
+            { email: user.email },
+            process.env.JWT_SECRET,
+            { expiresIn: "1h" }
+        );
+
+        console.log("✅ Login successful for:", user.email);
+
+        return res.json({
+            message: "Login successful",
+            user: {
+                id: user._id,
+                firstName: user.firstName,
+                email: user.email,
+                token
+            }
+        });
+    } catch (err) {
+        console.error("🔥 Error during signin:", err);
+        return res.status(500).json({ message: "Internal server error", error: err.message });
     }
-    )
-    .catch((err) => {
-        console.log('Error during signin', err);
-        res.status(500).send('Internal server error')
-        
-    })
-}
+};
