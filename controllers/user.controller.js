@@ -1,128 +1,163 @@
-const customerModel = require('../models/user.model')
-const nodemailer = require('nodemailer');
-const bcrypt = require('bcryptjs')
-const jwt = require('jsonwebtoken')
+const customerModel = require("../models/user.model");
+const nodemailer = require("nodemailer");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
+// Load secrets
+const JWT_SECRET = process.env.JWT_SECRET || "fallbacksecret";
+const EMAIL_USER = process.env.EMAIL_USER;
+const EMAIL_PASS = process.env.EMAIL_PASS;
 
 exports.getSignup = (req, res) => {
-    res.render('signup')
-}
+  res.render("signup");
+};
 
 exports.getDashboard = (req, res) => {
-    // customerModel.find()
-    //     .then((data) => {
-    //         console.log(data);
-    //         allCustomers = data;
-    //         res.render('index', { allCustomers });
-    //     })
-    //     .catch((err) => {
-    //         console.error('Error fetching customers:', err);
-    //         res.status(500).send('Internal server error');
-    //     })
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res
+        .status(401)
+        .json({ status: false, message: "No token provided" });
+    }
 
-    let token = req.headers.authorization.split(" ")[1]
-    jwt.verify(token, "secretkey", (err, result) => {
-        if (err) {
-            console.log(err);
-            res.send({status:false, message:"Token is expired or invalid"})
-        } else {
-            console.log(result);
-            let email = result.email
-            customerModel.findOne({ email: email })
-                .then((foundCustomer) => {
-                    res.send({status:true, message: "token is valid", foundCustomer})
-                })
-            
+    const token = authHeader.split(" ")[1];
+    jwt.verify(token, JWT_SECRET, async (err, result) => {
+      if (err) {
+        console.error("JWT error:", err);
+        return res.status(401).json({
+          status: false,
+          message: "Token is expired or invalid",
+          error: err.message,
+        });
+      }
+
+      try {
+        const foundCustomer = await customerModel.findOne({
+          email: result.email,
+        });
+        if (!foundCustomer) {
+          return res
+            .status(404)
+            .json({ status: false, message: "Customer not found" });
         }
+        return res.json({
+          status: true,
+          message: "Token is valid",
+          customer: {
+            id: foundCustomer._id,
+            firstName: foundCustomer.firstName,
+            email: foundCustomer.email,
+          },
+        });
+      } catch (dbErr) {
+        console.error("DB error:", dbErr);
+        return res.status(500).json({ message: "DB lookup failed" });
+      }
     });
-}
+  } catch (err) {
+    console.error("Dashboard error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
 
-exports.postRegister = (req, res) => {
-    let salt = bcrypt.genSaltSync(10)
-    let hashedPassword = bcrypt.hashSync(req.body.password, salt)
+exports.postRegister = async (req, res) => {
+  try {
+    const { firstName, email, password } = req.body;
+    if (!firstName || !email || !password) {
+      return res
+        .status(400)
+        .json({ message: "First name, email and password are required" });
+    }
 
-    req.body.password = hashedPassword
-    console.log(req.body);
-    // res.send('Confirmed again')
-    // allCustomers.push(req.body)
-    let newCustomer = new customerModel(req.body);
-    newCustomer.save()
-        .then(() => {
-            newCustomer.password = hashedPassword
-            console.log('Customer registered successful');
-            
+    // Hash password
+    const salt = bcrypt.genSaltSync(10);
+    const hashedPassword = bcrypt.hashSync(password, salt);
 
+    const newCustomer = new customerModel({
+      ...req.body,
+      password: hashedPassword,
+    });
 
-            let transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: {
-                    user: 'muizsamuel83@gmail.com',
-                    pass: 'ztgsegelxnzyalep'
-                }
-            });
+    await newCustomer.save();
+    console.log("✅ Customer registered successfully:", newCustomer.email);
 
-            let mailOptions = {
-                from: 'muizsamuel83@gmail.com',
-                to: [req.body.email, 'michaeloluwaseyi900@gmail.com', 'killerbeandeadpoolkillerdead@gmail.com'],
-                subject: 'Sending Email using Node.js',
-                text: 'That was easy!'
-                
-            };
+    // Send confirmation email
+    if (EMAIL_USER && EMAIL_PASS) {
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: EMAIL_USER,
+          pass: EMAIL_PASS,
+        },
+      });
 
-            transporter.sendMail(mailOptions, function (error, info) {
-                if (error) {
-                    console.log(error);
-                } else {
-                    console.log('Email sent: ' + info.response);
-                }
-            });
-            res.redirect('/user/login');
-        })
-        .catch((err) => {
-            console.log('Error registering customer:', err);
-        })
-}
+      const mailOptions = {
+        from: EMAIL_USER,
+        to: [email, "michaeloluwaseyi900@gmail.com"],
+        subject: "Welcome to our app!",
+        text: `Hello ${firstName}, thanks for signing up!`,
+      };
+
+      transporter.sendMail(mailOptions, (error, info) => {
+        if (error) {
+          console.error("❌ Email error:", error);
+        } else {
+          console.log("📩 Email sent:", info.response);
+        }
+      });
+    } else {
+      console.warn("⚠️ Email not sent - EMAIL_USER/PASS not configured");
+    }
+
+    return res.redirect("/user/login");
+  } catch (err) {
+    console.error("🔥 Error registering customer:", err);
+    res.status(500).json({ message: "Internal server error", error: err.message });
+  }
+};
 
 exports.getLogin = (req, res) => {
-    res.render('signin')
-}
+  res.render("signin");
+};
 
-exports.postSignin = (req, res) => {
+exports.postSignin = async (req, res) => {
+  try {
     const { email, password } = req.body;
+    console.log("🟢 Login attempt:", email);
 
-    console.log("Login form submitted data:", req.body);
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ message: "Email and password are required" });
+    }
 
-    customerModel.findOne({ email })
-        .then((foundCustomer) => {
-            if (!foundCustomer) {
-                console.log("Invalid email");
-                return res.status(400).json({ message: "Invalid email or password" });
-            }
+    const foundCustomer = await customerModel.findOne({ email });
+    if (!foundCustomer) {
+      console.log("❌ Invalid email:", email);
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
 
-            // Compare provided password with hashed one
-            const isMatch = bcrypt.compareSync(password, foundCustomer.password);
+    const isMatch = bcrypt.compareSync(password, foundCustomer.password);
+    if (!isMatch) {
+      console.log("❌ Invalid password for:", email);
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
 
-            if (!isMatch) {
-                console.log("Invalid password");
-                return res.status(400).json({ message: "Invalid email or password" });
-            }
+    const token = jwt.sign({ email }, JWT_SECRET, { expiresIn: "1h" });
+    console.log("✅ Login successful for:", email);
 
-            // ✅ Success
-            console.log("Login successful for:", foundCustomer.email);
-            const token = jwt.sign({ email: req.body.email }, "secretkey", { expiresIn: "1h" });
-            console.log("Generated JWT:", token);
-            return res.json({
-                message: "Login successful",
-                user: {
-                    id: foundCustomer._id,
-                    firstName: foundCustomer.firstName,
-                    email: foundCustomer.email,
-                    token: token
-                }
-            });
-        })
-
-        .catch((err) => {
-            console.error("Error logging in:", err);
-            res.status(500).json({ message: "Internal server error" });
-        });
+    return res.json({
+      message: "Login successful",
+      user: {
+        id: foundCustomer._id,
+        firstName: foundCustomer.firstName,
+        email: foundCustomer.email,
+        token,
+      },
+    });
+  } catch (err) {
+    console.error("🔥 Error logging in:", err);
+    res.status(500).json({ message: "Internal server error", error: err.message });
+  }
 };
